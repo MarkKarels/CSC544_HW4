@@ -1,7 +1,4 @@
 import socket
-import re
-import threading, select
-
 
 class HTTPServer(object):
 
@@ -9,15 +6,14 @@ class HTTPServer(object):
 		self.addr = ip_addr
 		self.port = port
 
-
-
 	def start(self):
+		# Establishes connection and specified IP and PORT
 		self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)	
 		self.server.bind((self.addr, self.port))
 		self.server.listen()
-		print('Listening on port %s' % self.server)
-
+		print('Listening on port: ' + str(self.port)) # Prints listening at specified port number
+		# While socket is open
 		while True:
 			conn, addr = self.server.accept()
 			print(conn, addr)
@@ -26,9 +22,21 @@ class HTTPServer(object):
 		
 			method = string_list[0]
 			requesting_file = string_list[1]
+			filyType = string_list[2]
 		
-			print('Client request ',requesting_file)
-		
+			print('Client Sent Request ',method + " " + filyType + ' 200/OK')
+			# Executes if POST method is established
+			if method == 'POST':
+				try:
+					with open(requesting_file+'.txt', 'a+') as self.f:
+						for x in range(len(string_list)):
+							if x >= 3:
+								self.f.write(string_list[x] + ' ')
+					self.f.close()
+
+				except FileNotFoundError:
+					conn.sendall(b"HTTP/1.0 404 Not Found\r\n\nPage Not Found")
+			# Executes if GET method is established
 			myfile = requesting_file.split('?')[0] # After the "?" symbol not relevent here
 			myfile = myfile.lstrip('/')
 			if(myfile == ''):
@@ -49,88 +57,11 @@ class HTTPServer(object):
 					mimetype = 'text/html'
 		
 				header += 'Content-Type: '+str(mimetype)+'\n\n'
-		
+			# Try Catch for type of connection
 			except Exception as e:
 				header = 'HTTP/1.1 404 Not Found\n\n'
 				response = '<html><body><center><h3>Error 404: File not found</h3><p>Python HTTP Server</p></center></body></html>'.encode('utf-8')
-
+			# What is sent back on GET
 			final_response = header.encode('utf-8')
 			final_response += response
 			conn.send(final_response)
-				
-			
-
-
-	def http_parser(self, conn, addr):
-
-		inout = [conn]
-		try:
-			request = conn.recv(65538)
-
-		except socket.timeout as e:
-			print("\n[-] Connection Timeout.")
-			protocol = ""
-			return
-		
-		request = request.decode("utf-8").split("\r\n")
-		# print(request)
-		# Handling lost packets
-		try:
-			method, page, protocol = request[0].split()
-		except ValueError:
-			return
-		
-		# print(method)
-		if method == "GET":
-			if page[-1] == "/": page += "index.html"
-			try:
-				with open(page, "rb")as p:
-					data = p.read()
-				p.close()
-				conn.sendall(data)
-
-			except FileNotFoundError:
-				conn.sendall(b"HTTP/1.0 404 Not Found\r\n\nPage Not Found")
-
-
-		elif method == "POST":
-
-			# recieving the FIle
-			encode_file = conn.recv(65538)
-			while 1:
-				infds, outfds, errfds = select.select(inout, inout, [], 1)
-				print(len(infds), len(outfds))
-
-				if len(infds) != 0:
-					encode_file += conn.recv(65538)
-				else:
-					break
-			
-			# FIle multi/part form-data decoding
-			boundry = encode_file.decode("utf-8").split("\r\n")[0]
-			form_fields = encode_file.decode("utf-8").split(boundry)
-		
-			for field in form_fields:
-
-				data = field.split("\r\n")
-				if len(data) > 3:
-					# print(data)
-					try:
-						filename = re.search('filename="(.*)"', data[1]).group(1)
-
-					except AttributeError:
-						filename = re.search('name="(.*)"', data[1]).group(1)
-
-					if data[2]: body = '\n'.join(data[4:])
-					else: body = '\n'.join(data[3:])
-					with open("public/uploads/"+filename, "w")as fb:
-						fb.write(body)
-					fb.close()
-					conn.sendall(b"HTTP/1.0 200 OK\r\n\nUploaded Sucessfully!")
-
-
-		if protocol == "HTTP/1.1":
-			conn.settimeout(8)
-			self.http_parser(conn, addr)
-		conn.close()
-		print("CONN CLOSED")
